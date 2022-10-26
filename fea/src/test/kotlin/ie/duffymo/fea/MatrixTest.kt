@@ -1,9 +1,13 @@
-package ie.duffymo.fea.ie.duffymo.fea
+package ie.duffymo.fea
 
 import org.junit.jupiter.api.Assertions
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import org.nd4j.linalg.api.ops.DynamicCustomOp
+import org.nd4j.linalg.api.ops.impl.transforms.Cholesky
+import org.nd4j.linalg.api.ops.impl.transforms.custom.Svd
 import org.nd4j.linalg.factory.Nd4j
 import org.nd4j.linalg.factory.ops.NDLinalg
 
@@ -298,6 +302,22 @@ class MatrixTest {
     }
 
     @Test
+    fun `cholesky solution generation`() {
+        // setup
+        val a = Nd4j.create(doubleArrayOf(
+            4.0, 12.0, -16.0,
+            12.0, 37.0, -43.0,
+            -16.0, -43.0, 98.0
+        ), intArrayOf(3, 3))
+        val b = Nd4j.create(doubleArrayOf(10.0, 20.0, 30.0), intArrayOf(3, 1))
+        val expected = Nd4j.create(doubleArrayOf(285.8333, -76.6667, 13.3333), intArrayOf(3, 1))
+        // exercise
+        val actual = NDLinalg().solve(a, b)
+        // assert
+        Assertions.assertEquals(expected, actual)
+    }
+
+    @Test
     fun `qr decomposition`() {
         // setup
         // https://en.wikipedia.org/wiki/QR_decomposition
@@ -325,13 +345,18 @@ class MatrixTest {
     }
 
     @Test
+    @Disabled
     fun `singular value decomposition`() {
         // setup
         // https://stackoverflow.com/questions/19763698/solving-non-square-linear-system-with-r/19767525#19767525
+        // https://stackoverflow.com/questions/74157832/runtime-error-from-nd4j-when-executing-svd/74175076#74175076
+        Nd4j.getExecutioner().enableDebugMode(true)
+        Nd4j.getExecutioner().enableVerboseMode(true)
+
         val a = Nd4j.create(doubleArrayOf(
-           0.0, 1.0, -2.0, 3.0,
-           5.0, -3.0, 1.0, -2.0,
-           5.0, -2.0, -1.0, 1.0
+            0.0, 1.0, -2.0, 3.0,
+            5.0, -3.0, 1.0, -2.0,
+            5.0, -2.0, -1.0, 1.0
         ), intArrayOf(3, 4))
         val b = Nd4j.create(doubleArrayOf(-17.0, 28.0, 11.0), intArrayOf(3, 1))
         val u = Nd4j.create(doubleArrayOf(
@@ -340,16 +365,20 @@ class MatrixTest {
             0.6333764, -0.5152679, -0.5773503
         ), intArrayOf(3, 3))
         val v = Nd4j.create(doubleArrayOf(
-             0.87191556, -0.2515803, -0.1764323,
+            0.87191556, -0.2515803, -0.1764323,
             -0.46022634, -0.1453716, -0.4694190,
-             0.04853711,  0.5423235,  0.6394484,
+            0.04853711,  0.5423235,  0.6394484,
             -0.15999723, -0.7883272,  0.5827720
         ), intArrayOf(3, 4))
         val d = Nd4j.create(doubleArrayOf(
             8.007081e+00, 4.459446e+00, 4.022656e-16
         ), intArrayOf(3))
         // exercise
-        val actual = NDLinalg().svd(a, true, true)
+        val actual = DynamicCustomOp.builder("svd")
+            .addInputs(a)
+            .addIntegerArguments(1, 1, Svd.DEFAULT_SWITCHNUM)
+            .build()
+        Nd4j.linalg().svd(a, true, true)
         // assert
         Assertions.assertTrue(true)
     }
@@ -357,9 +386,31 @@ class MatrixTest {
     @Test
     fun `cholesky decomposition`() {
         // setup
+        // https://en.wikipedia.org/wiki/Cholesky_decomposition
+        // Note: this matrix is symmetric.  Is it positive definite?  Required for Cholesky
+        val a = Nd4j.create(doubleArrayOf(
+            4.0, 12.0, -16.0,
+            12.0, 37.0, -43.0,
+            -16.0, -43.0, 98.0
+        ), intArrayOf(3, 3))
+        val b = Nd4j.create(doubleArrayOf(10.0, 20.0, 30.0), intArrayOf(3, 1))
+        val x = Nd4j.create(doubleArrayOf(285.8333, -76.6667, 13.3333), intArrayOf(3, 1))
+        val l = Nd4j.create(doubleArrayOf(
+            2.0, 0.0, 0.0,
+            6.0, 1.0, 0.0,
+            -8.0, 5.0, 3.0
+        ), intArrayOf(3, 3))
         // exercise
+        val cholesky = Cholesky(a)
+        val actual = Nd4j.getExecutioner().exec(cholesky).toList()[0]
         // assert
-        
+        Assertions.assertEquals(l, actual)
+        Assertions.assertEquals(a, actual.mmul(actual.transpose()))
+        // forward-back substitution
+        val y = NDLinalg().triangularSolve(actual, b, true, false)
+        println(y)
+        val z = NDLinalg().triangularSolve(actual.transpose(), y, false, false)
+        Assertions.assertEquals(x, z)
     }
 
     @Test
